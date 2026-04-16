@@ -1,31 +1,49 @@
 const express = require("express");
 const router = express.Router();
+const prisma = require("../lib/prisma");
 
-const questions = require("../data/questions");
-
-//Get /questions - list all questions or filter by keyword
-router.get("/", (req, res) => {
+// GET /questions - list all questions or filter by keyword
+router.get("/", async (req, res) => {
   const { keyword } = req.query;
 
-  if (!keyword) {
-    return res.json(questions);
-  }
+  const where = keyword
+    ? {
+        OR: [
+          {
+            question: {
+              contains: keyword
+            }
+          },
+          {
+            answer: {
+              contains: keyword
+            }
+          }
+        ]
+      }
+    : {};
 
-  const filteredQuestions = questions.filter((questionItem) =>
-    questionItem.question.toLowerCase().includes(keyword.toLowerCase()) ||
-    questionItem.answer.toLowerCase().includes(keyword.toLowerCase())
-  );
+  const questions = await prisma.question.findMany({
+    where,
+    orderBy: {
+      id: "asc"
+    }
+  });
 
-  res.json(filteredQuestions);
+  res.json(questions);
 });
 
 // GET /questions/:questionId
 // Show a specific question by its ID
 
-router.get("/:questionId", (req, res) => {
+router.get("/:questionId", async (req, res) => {
   const questionId = Number(req.params.questionId);
 
-  const question = questions.find((q) => q.id === questionId);
+  const question = await prisma.question.findUnique({
+    where: {
+      id: questionId
+    }
+  });
 
   if (!question) {
     return res.status(404).json({ message: "Question not found" });
@@ -37,7 +55,7 @@ router.get("/:questionId", (req, res) => {
 // POST /questions
 // Create a new question
 
-router.post("/", (req, res) => {
+router.post("/", async (req, res) => {
   const { question, answer } = req.body || {};
 
   if (!question || !answer) {
@@ -46,15 +64,12 @@ router.post("/", (req, res) => {
     });
   }
 
-  const maxId = Math.max(...questions.map((q) => q.id), 0);
-
-  const newQuestion = {
-    id: questions.length ? maxId + 1 : 1,
-    question,
-    answer
-  };
-
-  questions.push(newQuestion);
+  const newQuestion = await prisma.question.create({
+    data: {
+      question,
+      answer
+    }
+  });
 
   res.status(201).json(newQuestion);
 });
@@ -62,11 +77,15 @@ router.post("/", (req, res) => {
 // PUT /questions/:questionId
 // Edit a question by its ID
 
-router.put("/:questionId", (req, res) => {
+router.put("/:questionId", async (req, res) => {
   const questionId = Number(req.params.questionId);
   const { question, answer } = req.body || {};
 
-  const existingQuestion = questions.find((q) => q.id === questionId);
+  const existingQuestion = await prisma.question.findUnique({
+    where: {
+      id: questionId
+    }
+  });
 
   if (!existingQuestion) {
     return res.status(404).json({ message: "Question not found" });
@@ -78,29 +97,44 @@ router.put("/:questionId", (req, res) => {
     });
   }
 
-  existingQuestion.question = question;
-  existingQuestion.answer = answer;
+  const updatedQuestion = await prisma.question.update({
+    where: {
+      id: questionId
+    },
+    data: {
+      question,
+      answer
+    }
+  });
 
-  res.json(existingQuestion);
+  res.json(updatedQuestion);
 });
 
 // DELETE /questions/:questionId
 // Delete a question by its ID
 
-router.delete("/:questionId", (req, res) => {
+router.delete("/:questionId", async (req, res) => {
   const questionId = Number(req.params.questionId);
 
-  const questionIndex = questions.findIndex((q) => q.id === questionId);
+  const question = await prisma.question.findUnique({
+    where: {
+      id: questionId
+    }
+  });
 
-  if (questionIndex === -1) {
+  if (!question) {
     return res.status(404).json({ message: "Question not found" });
   }
 
-  const deletedQuestion = questions.splice(questionIndex, 1);
+  await prisma.question.delete({
+    where: {
+      id: questionId
+    }
+  });
 
   res.json({
     message: "Question deleted successfully",
-    question: deletedQuestion[0]
+    question
   });
 });
 
