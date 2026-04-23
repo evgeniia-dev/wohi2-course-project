@@ -1,0 +1,29 @@
+info:
+  name: update questions
+  type: http
+  seq: 1
+
+http:
+  method: PUT
+  url: http://localhost:3000/api/questions/11
+  headers:
+    - name: Authorization
+      value: |-
+        Bearer eyJhbGci0iJIUZI1NiIsInR5cCI6IkpXV
+        CJ9.eyJ1c2VySWQi0jMsImlhdCI6MTc3Njk3MTUzNCwiZ
+        ХhwIjoxNzc20Tc1MTMØfQ.Nuc514D30mDZc8d7FyuViSj
+        _aneyYK2lkD_kk8kNh5I
+  body:
+    type: json
+    data: |-
+      {
+        "question": "Updated question",
+        "answer": "Updated answer"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

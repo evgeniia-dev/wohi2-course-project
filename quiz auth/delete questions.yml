@@ -1,0 +1,18 @@
+info:
+  name: delete questions
+  type: http
+
+http:
+  method: DELETE
+  url: http://localhost:3000/api/questions/ID_HERE
+  headers:
+    - name: Authorization
+      value: Bearer YOUR_TOKEN
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+​

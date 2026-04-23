@@ -1,62 +1,76 @@
 const { PrismaClient } = require("@prisma/client");
+const bcrypt = require("bcrypt");
+
 const prisma = new PrismaClient();
 
 const seedQuestions = [
   {
     question: "Which programming language is mainly used to style web pages?",
-    answer: "CSS",
+    answer: "CSS"
   },
   {
     question: "Which programming language is commonly used to add interactivity to websites?",
-    answer: "JavaScript",
+    answer: "JavaScript"
   },
   {
     question: "Which programming language is known for using indentation instead of curly braces?",
-    answer: "Python",
+    answer: "Python"
   },
   {
     question: "Which programming language is famous for the slogan 'Write once, run anywhere'?",
-    answer: "Java",
+    answer: "Java"
   },
   {
     question: "Which programming language was created by Apple for iOS app development?",
-    answer: "Swift",
+    answer: "Swift"
   },
   {
     question: "Which programming language is often used for server-side scripting and can be embedded in HTML?",
-    answer: "PHP",
+    answer: "PHP"
   },
   {
     question: "Which programming language is widely used for system programming and is known for manual memory management?",
-    answer: "C",
+    answer: "C"
   },
   {
     question: "Which programming language is an extension of C and is widely used in game development?",
-    answer: "C++",
+    answer: "C++"
   },
   {
     question: "Which programming language was developed by Microsoft and is commonly used with .NET?",
-    answer: "C#",
+    answer: "C#"
   },
   {
     question: "Which programming language is widely used for data analysis, machine learning, and AI?",
-    answer: "Python",
-  },
+    answer: "Python"
+  }
 ];
 
 async function main() {
   await prisma.question.deleteMany();
+  await prisma.user.deleteMany();
 
-  for (const question of seedQuestions) {
+  const hashedPassword = await bcrypt.hash("1234", 10);
+
+  const user = await prisma.user.create({
+    data: {
+      email: "admin@example.com",
+      password: hashedPassword,
+      name: "Admin User"
+    }
+  });
+
+  for (const item of seedQuestions) {
     await prisma.question.create({
       data: {
-        question: question.question,
-        answer: question.answer,
-      },
+        question: item.question,
+        answer: item.answer,
+        userId: user.id
+      }
     });
   }
 
-  console.log("Seed data inserted successfully");
+  console.log("Seeded user and questions");
 }
 
 main()
@@ -64,4 +78,6 @@ main()
     console.error(e);
     process.exit(1);
   })
-  .finally(() => prisma.$disconnect());
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
