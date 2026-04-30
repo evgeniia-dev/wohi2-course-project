@@ -1,0 +1,25 @@
+info:
+  name: POST testing questions
+  type: http
+
+http:
+  method: POST
+  url: http://localhost:3000/api/questions/11/play
+  headers:
+    - name: Authorization
+      value: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjMsImlhdCI6MTc3NzU1NDQ4OSwiZXhwIjoxNzc3NTU4MDg5fQ.PpZev87UmX17s9J-Qj7C2zHCiZzE2eDXg6ISMihxTKM
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {
+        "submittedAnswer": "HTML"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

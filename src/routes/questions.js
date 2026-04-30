@@ -1,12 +1,44 @@
 const express = require("express");
+const path = require("path");
+const multer = require("multer");
 const router = express.Router();
 const prisma = require("../lib/prisma");
 const authenticate = require("../middleware/auth");
 const isOwner = require("../middleware/isOwner");
 
-// GET /questions - list all questions or filter by keyword
+const storage = multer.diskStorage({
+  destination: path.join(__dirname, "..", "..", "public", "uploads"),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
+  }
+});
+
+const upload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) cb(null, true);
+    else cb(new Error("Only image files are allowed"));
+  },
+  limits: {
+    fileSize: 5 * 1024 * 1024
+  }
+});
+
+function formatQuestion(question) {
+  return {
+    ...question,
+    userName: question.user?.name || null,
+    user: undefined
+  };
+}
+
 router.get("/", async (req, res) => {
   const { keyword } = req.query;
+
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 5));
+  const skip = (page - 1) * limit;
 
   const where = keyword
     ? {
@@ -25,38 +57,56 @@ router.get("/", async (req, res) => {
       }
     : {};
 
-  const questions = await prisma.question.findMany({
-    where,
-    orderBy: {
-      id: "asc"
-    }
-  });
+  const [filteredQuestions, total] = await Promise.all([
+    prisma.question.findMany({
+      where,
+      include: {
+        user: true
+      },
+      orderBy: {
+        id: "asc"
+      },
+      skip,
+      take: limit
+    }),
+    prisma.question.count({
+      where
+    })
+  ]);
 
-  res.json(questions);
+  res.json({
+    data: filteredQuestions.map(formatQuestion),
+    page,
+    limit,
+    total,
+    totalPages: Math.ceil(total / limit)
+  });
 });
 
-// GET /questions/:questionId
-// Show a specific question by its ID
 router.get("/:questionId", async (req, res) => {
   const questionId = Number(req.params.questionId);
 
   const question = await prisma.question.findUnique({
     where: {
       id: questionId
+    },
+    include: {
+      user: true
     }
   });
 
   if (!question) {
-    return res.status(404).json({ message: "Question not found" });
+    return res.status(404).json({
+      message: "Question not found"
+    });
   }
 
-  res.json(question);
+  res.json(formatQuestion(question));
 });
 
-// POST /questions
-// Create a new question
-router.post("/", authenticate, async (req, res) => {
+router.post("/", authenticate, upload.single("image"), async (req, res) => {
   const { question, answer } = req.body || {};
+  const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
 
   if (!question || !answer) {
     return res.status(400).json({
@@ -68,40 +118,98 @@ router.post("/", authenticate, async (req, res) => {
     data: {
       question,
       answer,
+      imageUrl,
       userId: req.user.userId
+    },
+    include: {
+      user: true
     }
   });
 
-  res.status(201).json(newQuestion);
+  res.status(201).json(formatQuestion(newQuestion));
 });
 
-// PUT /questions/:questionId
-// Edit a question by its ID
-router.put("/:questionId", authenticate, isOwner, async (req, res) => {
+router.post("/:questionId/play", authenticate, async (req, res) => {
   const questionId = Number(req.params.questionId);
-  const { question, answer } = req.body || {};
+  const { submittedAnswer } = req.body || {};
 
-  if (!question || !answer) {
+  if (!submittedAnswer) {
     return res.status(400).json({
-      message: "question and answer are required"
+      message: "submittedAnswer is required"
     });
   }
 
-  const updatedQuestion = await prisma.question.update({
+  const question = await prisma.question.findUnique({
     where: {
       id: questionId
-    },
-    data: {
-      question,
-      answer
     }
   });
 
-  res.json(updatedQuestion);
+  if (!question) {
+    return res.status(404).json({
+      message: "Question not found"
+    });
+  }
+
+  const correct =
+    submittedAnswer.trim().toLowerCase() === question.answer.trim().toLowerCase();
+
+  const attempt = await prisma.attempt.create({
+    data: {
+      submittedAnswer,
+      correct,
+      userId: req.user.userId,
+      questionId
+    }
+  });
+
+  res.status(201).json({
+    id: attempt.id,
+    correct: attempt.correct,
+    submittedAnswer: attempt.submittedAnswer,
+    correctAnswer: question.answer,
+    createdAt: attempt.createdAt
+  });
 });
 
-// DELETE /questions/:questionId
-// Delete a question by its ID
+router.put(
+  "/:questionId",
+  authenticate,
+  upload.single("image"),
+  isOwner,
+  async (req, res) => {
+    const questionId = Number(req.params.questionId);
+    const { question, answer } = req.body || {};
+
+    if (!question || !answer) {
+      return res.status(400).json({
+        message: "question and answer are required"
+      });
+    }
+
+    const data = {
+      question,
+      answer
+    };
+
+    if (req.file) {
+      data.imageUrl = `/uploads/${req.file.filename}`;
+    }
+
+    const updatedQuestion = await prisma.question.update({
+      where: {
+        id: questionId
+      },
+      data,
+      include: {
+        user: true
+      }
+    });
+
+    res.json(formatQuestion(updatedQuestion));
+  }
+);
+
 router.delete("/:questionId", authenticate, isOwner, async (req, res) => {
   const questionId = Number(req.params.questionId);
 
@@ -113,8 +221,21 @@ router.delete("/:questionId", authenticate, isOwner, async (req, res) => {
 
   res.json({
     message: "Question deleted successfully",
-    question: req.question
+    question: formatQuestion(req.question)
   });
+});
+
+router.use((err, req, res, next) => {
+  if (
+    err instanceof multer.MulterError ||
+    err?.message === "Only image files are allowed"
+  ) {
+    return res.status(400).json({
+      msg: err.message
+    });
+  }
+
+  next(err);
 });
 
 module.exports = router;

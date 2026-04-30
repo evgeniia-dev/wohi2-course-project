@@ -1,0 +1,22 @@
+info:
+  name: GET questions route
+  type: http
+
+http:
+  method: GET
+  url: http://localhost:3000/api/questions?page=1&limit=5
+  params:
+    - name: page
+      value: "1"
+      type: query
+    - name: limit
+      value: "5"
+      type: query
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+​
