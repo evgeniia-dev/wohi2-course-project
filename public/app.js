@@ -1,7 +1,5 @@
-// --- State ---
 let isRegisterMode = false;
 
-// --- Helpers ---
 function getCurrentUserId() {
   const token = getToken();
   if (!token) return null;
@@ -37,7 +35,6 @@ async function apiFetch(route, options = {}) {
   return data;
 }
 
-// --- Auth ---
 function showAuth() {
   document.getElementById("auth-section").style.display = "block";
   document.getElementById("app-section").style.display = "none";
@@ -106,7 +103,6 @@ async function handleAuth(e) {
   }
 }
 
-// --- App ---
 async function showApp() {
   document.getElementById("auth-section").style.display = "none";
   document.getElementById("app-section").style.display = "block";
@@ -166,7 +162,7 @@ async function loadQuestions(keyword = "", page = 1) {
           <div class="question-actions">
             <span>
               <button class="btn btn-play" data-id="${q.id}">Play</button>
-              <a href="#" class="read-more" data-id="${q.id}">See answer</a>
+              <a href="#" class="read-more" data-id="${q.id}">Question details</a>
             </span>
             ${
               q.userId === currentUserId
@@ -255,7 +251,7 @@ async function loadQuestionDetail(qId) {
         <h3>${q.question} ${q[CONFIG.API_FIELDS.SOLVED] ? `<span class="badge-solved">Solved</span>` : ""}</h3>
         <p class="question-meta">by ${q.userName || "Unknown"}</p>
         ${q.imageUrl ? `<img class="question-image" src="${q.imageUrl}" alt="">` : ""}
-        <p class="question-answer">${q.answer}</p>
+        <p class="question-meta">Use Play to submit your answer.</p>
         ${
           q.keywords && q.keywords.length
             ? `<div class="question-keywords">${q.keywords.map((k) => `<span class="keyword">${k}</span>`).join("")}</div>`
@@ -285,7 +281,6 @@ async function loadQuestionDetail(qId) {
   }
 }
 
-// --- Create / Edit ---
 async function showQuestionForm(qId) {
   const container = document.getElementById("questions-container");
   const isEdit = !!qId;
@@ -357,7 +352,6 @@ async function showQuestionForm(qId) {
   });
 }
 
-// --- Play ---
 async function playQuestion(qId) {
   const container = document.getElementById("questions-container");
   container.innerHTML = '<p class="loading">Loading...</p>';
@@ -425,7 +419,6 @@ async function playQuestion(qId) {
   }
 }
 
-// --- Delete ---
 async function deleteQuestion(qId) {
   if (!confirm("Are you sure you want to delete this question?")) return;
 
@@ -442,7 +435,6 @@ function handleLogout() {
   showAuth();
 }
 
-// --- Init ---
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("logout-btn").addEventListener("click", handleLogout);
   if (getToken()) {
