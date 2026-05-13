@@ -5,10 +5,12 @@ const CONFIG = {
     REGISTER: "/api/auth/register",
     QUESTIONS: "/api/questions"
   },
-  API_FIELDS: {
+  FIELDS: {
     LOGIN: ["email", "password"],
     REGISTER: ["email", "password", "name"],
-    QUESTION: ["question", "answer"],
+    QUESTION: ["question", "answer", "keywords"]
+  },
+  API_FIELDS: {
     SOLVED: "solved"
   },
   QUESTIONS_PER_PAGE: 5,
