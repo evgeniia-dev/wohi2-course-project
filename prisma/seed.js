@@ -47,13 +47,14 @@ const seedQuestions = [
 ];
 
 async function main() {
-  await prisma.question.deleteMany();
-  await prisma.user.deleteMany();
-
   const hashedPassword = await bcrypt.hash("1234", 10);
 
-  const user = await prisma.user.create({
-    data: {
+  const user = await prisma.user.upsert({
+    where: {
+      email: "admin@example.com"
+    },
+    update: {},
+    create: {
       email: "admin@example.com",
       password: hashedPassword,
       name: "Admin User"
@@ -61,16 +62,24 @@ async function main() {
   });
 
   for (const item of seedQuestions) {
-    await prisma.question.create({
-      data: {
-        question: item.question,
-        answer: item.answer,
-        userId: user.id
+    const existingQuestion = await prisma.question.findFirst({
+      where: {
+        question: item.question
       }
     });
+
+    if (!existingQuestion) {
+      await prisma.question.create({
+        data: {
+          question: item.question,
+          answer: item.answer,
+          userId: user.id
+        }
+      });
+    }
   }
 
-  console.log("Seeded user and questions");
+  console.log("Seeded admin user and demo questions without deleting existing data");
 }
 
 main()
@@ -79,5 +88,5 @@ main()
     process.exit(1);
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    prisma.$disconnect();
   });
