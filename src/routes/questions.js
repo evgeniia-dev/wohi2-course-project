@@ -40,12 +40,14 @@ const upload = multer({
 function formatQuestion(question) {
   return {
     ...question,
+    solved: question.attempts ? question.attempts.some((attempt) => attempt.correct) : false,
     userName: question.user?.name || null,
-    user: undefined
+    user: undefined,
+    attempts: undefined
   };
 }
 
-router.get("/", async (req, res) => {
+router.get("/", authenticate, async (req, res) => {
   const { keyword } = req.query;
 
   const page = Math.max(1, parseInt(req.query.page) || 1);
@@ -73,7 +75,13 @@ router.get("/", async (req, res) => {
     prisma.question.findMany({
       where,
       include: {
-        user: true
+        user: true,
+        attempts: {
+          where: {
+            userId: req.user.userId,
+            correct: true
+          }
+        }
       },
       orderBy: {
         id: "asc"
