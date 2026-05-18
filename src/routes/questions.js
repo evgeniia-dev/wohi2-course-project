@@ -15,6 +15,7 @@ const {
 const QuestionInput = z.object({
   question: z.string().min(1),
   answer: z.string().min(1),
+  difficulty: z.enum(["easy", "medium", "hard"]).optional(),
   keywords: z.union([z.string(), z.array(z.string())]).optional()
 });
 
@@ -47,29 +48,43 @@ function formatQuestion(question) {
   };
 }
 
+function buildQuestionWhere(keyword, difficulty) {
+  const where = {};
+
+  if (keyword) {
+    where.OR = [
+      {
+        question: {
+          contains: keyword
+        }
+      },
+      {
+        answer: {
+          contains: keyword
+        }
+      }
+    ];
+  }
+
+  if (difficulty) {
+    where.difficulty = difficulty;
+  }
+
+  return where;
+}
+
 router.get("/", authenticate, async (req, res) => {
-  const { keyword } = req.query;
+  const { keyword, difficulty } = req.query;
+
+  if (difficulty && !["easy", "medium", "hard"].includes(difficulty)) {
+    throw new ValidationError("difficulty must be easy, medium, or hard");
+  }
 
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 5));
   const skip = (page - 1) * limit;
 
-  const where = keyword
-    ? {
-        OR: [
-          {
-            question: {
-              contains: keyword
-            }
-          },
-          {
-            answer: {
-              contains: keyword
-            }
-          }
-        ]
-      }
-    : {};
+  const where = buildQuestionWhere(keyword, difficulty);
 
   const [filteredQuestions, total] = await Promise.all([
     prisma.question.findMany({
@@ -103,6 +118,39 @@ router.get("/", authenticate, async (req, res) => {
   });
 });
 
+router.get("/random", authenticate, async (req, res) => {
+  const { difficulty } = req.query;
+
+  if (difficulty && !["easy", "medium", "hard"].includes(difficulty)) {
+    throw new ValidationError("difficulty must be easy, medium, or hard");
+  }
+
+  const where = difficulty ? { difficulty } : {};
+
+  const questions = await prisma.question.findMany({
+    where,
+    include: {
+      user: true,
+      attempts: {
+        where: {
+          userId: req.user.userId,
+          correct: true
+        }
+      }
+    }
+  });
+
+  const randomQuestions = questions
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 10)
+    .map(formatQuestion);
+
+  res.json({
+    data: randomQuestions,
+    total: randomQuestions.length
+  });
+});
+
 router.get("/:questionId", async (req, res) => {
   const questionId = Number(req.params.questionId);
 
@@ -130,6 +178,7 @@ router.post("/", authenticate, upload.single("image"), async (req, res) => {
     data: {
       question: data.question,
       answer: data.answer,
+      difficulty: data.difficulty || "easy",
       imageUrl,
       userId: req.user.userId
     },
@@ -191,7 +240,8 @@ router.put(
 
     const data = {
       question: input.question,
-      answer: input.answer
+      answer: input.answer,
+      difficulty: input.difficulty || "easy"
     };
 
     if (req.file) {

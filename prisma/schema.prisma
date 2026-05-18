@@ -19,13 +19,14 @@ model User {
 }
 
 model Question {
-  id        Int       @id @default(autoincrement())
-  question  String    @db.Text
-  answer    String    @db.Text
-  imageUrl  String?   @db.VarChar(255)
-  userId    Int
-  user      User      @relation(fields: [userId], references: [id])
-  attempts  Attempt[]
+  id         Int       @id @default(autoincrement())
+  question   String    @db.Text
+  answer     String    @db.Text
+  difficulty String    @default("easy") @db.VarChar(20)
+  imageUrl   String?   @db.VarChar(255)
+  userId     Int
+  user       User      @relation(fields: [userId], references: [id])
+  attempts   Attempt[]
 
   @@map("questions")
 }
