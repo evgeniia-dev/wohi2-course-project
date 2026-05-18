@@ -27,11 +27,22 @@ async function apiFetch(route, options = {}) {
   const token = getToken();
   const isFormData = options.body instanceof FormData;
   const headers = { ...options.headers };
-  if (!isFormData) headers["Content-Type"] = "application/json";
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  if (!isFormData) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${CONFIG.API_URL}${route}`, { ...options, headers });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || data.msg || data.message || "Request failed");
+
+  if (!res.ok) {
+    throw new Error(data.error || data.msg || data.message || "Request failed");
+  }
+
   return data;
 }
 
@@ -80,6 +91,7 @@ function renderAuthForm() {
 
 async function handleAuth(e) {
   e.preventDefault();
+
   const errorEl = document.getElementById("auth-error");
   errorEl.textContent = "";
 
@@ -94,8 +106,9 @@ async function handleAuth(e) {
   try {
     const data = await apiFetch(route, {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify(body)
     });
+
     setToken(data.token);
     showApp();
   } catch (err) {
@@ -110,17 +123,145 @@ async function showApp() {
   await loadQuestions();
 }
 
-async function loadQuestions(keyword = "", page = 1) {
+function renderToolbar(keyword, difficulty) {
+  return `
+    <div class="toolbar">
+      <button class="btn btn-primary" id="new-question-btn">+ New Question</button>
+      <button class="btn btn-search" id="random-btn">Random Quiz</button>
+      <button class="btn btn-search" id="leaderboard-btn">Leaderboard</button>
+      <div class="search-bar">
+        <input type="text" id="keyword-input" placeholder="Search by keyword..." value="${keyword}" />
+        <select id="difficulty-filter" style="padding:0.55rem 1rem;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#fff;font-family:inherit">
+          <option value="">All levels</option>
+          <option value="easy" ${difficulty === "easy" ? "selected" : ""}>Easy</option>
+          <option value="medium" ${difficulty === "medium" ? "selected" : ""}>Medium</option>
+          <option value="hard" ${difficulty === "hard" ? "selected" : ""}>Hard</option>
+        </select>
+        <button class="btn btn-search" id="search-btn">Search</button>
+        ${keyword || difficulty ? `<button class="btn btn-clear" id="clear-btn">Clear</button>` : ""}
+      </div>
+    </div>`;
+}
+
+function renderQuestionCards(questions, currentUserId) {
+  if (questions.length === 0) {
+    return '<p class="empty-state">No questions found. Create one to get started!</p>';
+  }
+
+  return questions
+    .map(
+      (q) => `
+      <article class="question-card ${q[CONFIG.API_FIELDS.SOLVED] ? "solved-card" : ""}">
+        <h3>
+          <a href="#" class="question-link" data-id="${q.id}">${q.question}</a>
+          ${q[CONFIG.API_FIELDS.SOLVED] ? `<span class="badge-solved">Solved</span>` : ""}
+          <span class="keyword">${q.difficulty || "easy"}</span>
+        </h3>
+        ${q.imageUrl ? `<img class="question-thumb" src="${q.imageUrl}" alt="">` : ""}
+        ${
+          q.keywords && q.keywords.length
+            ? `<div class="question-keywords">${q.keywords.map((k) => `<span class="keyword">${k}</span>`).join("")}</div>`
+            : ""
+        }
+        <div class="question-actions">
+          <span>
+            <button class="btn btn-play" data-id="${q.id}">Play</button>
+            <a href="#" class="read-more" data-id="${q.id}">Question details</a>
+          </span>
+          ${
+            q.userId === currentUserId
+              ? `<span class="owner-actions">
+                  <button class="btn btn-edit" data-id="${q.id}">Edit</button>
+                  <button class="btn btn-delete" data-id="${q.id}">Delete</button>
+                </span>`
+              : ""
+          }
+        </div>
+      </article>`
+    )
+    .join("");
+}
+
+function attachQuestionListEvents(keyword = "", page = 1, difficulty = "") {
+  document.getElementById("new-question-btn").addEventListener("click", () => showQuestionForm());
+  document.getElementById("random-btn").addEventListener("click", () => loadRandomQuiz());
+  document.getElementById("leaderboard-btn").addEventListener("click", () => loadLeaderboard());
+
+  document.getElementById("search-btn").addEventListener("click", () => {
+    const newKeyword = document.getElementById("keyword-input").value.trim();
+    const newDifficulty = document.getElementById("difficulty-filter").value;
+    loadQuestions(newKeyword, 1, newDifficulty);
+  });
+
+  document.getElementById("keyword-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const newDifficulty = document.getElementById("difficulty-filter").value;
+      loadQuestions(e.target.value.trim(), 1, newDifficulty);
+    }
+  });
+
+  document.getElementById("difficulty-filter").addEventListener("change", (e) => {
+    loadQuestions(keyword, 1, e.target.value);
+  });
+
+  const clearBtn = document.getElementById("clear-btn");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => loadQuestions());
+  }
+
+  const prevBtn = document.getElementById("prev-btn");
+  if (prevBtn) {
+    prevBtn.addEventListener("click", () => loadQuestions(keyword, page - 1, difficulty));
+  }
+
+  const nextBtn = document.getElementById("next-btn");
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => loadQuestions(keyword, page + 1, difficulty));
+  }
+
+  const container = document.getElementById("questions-container");
+
+  container.querySelectorAll(".question-link, .read-more").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      loadQuestionDetail(el.dataset.id);
+    });
+  });
+
+  container.querySelectorAll(".btn-edit").forEach((el) => {
+    el.addEventListener("click", () => showQuestionForm(el.dataset.id));
+  });
+
+  container.querySelectorAll(".btn-delete").forEach((el) => {
+    el.addEventListener("click", () => deleteQuestion(el.dataset.id));
+  });
+
+  container.querySelectorAll(".btn-play").forEach((el) => {
+    el.addEventListener("click", () => playQuestion(el.dataset.id));
+  });
+}
+
+async function loadQuestions(keyword = "", page = 1, difficulty = "") {
   const container = document.getElementById("questions-container");
   container.innerHTML = '<p class="loading">Loading questions...</p>';
 
   try {
-    const params = new URLSearchParams({ page, limit: CONFIG.QUESTIONS_PER_PAGE });
-    if (keyword) params.set("keyword", keyword);
+    const params = new URLSearchParams({
+      page,
+      limit: CONFIG.QUESTIONS_PER_PAGE
+    });
+
+    if (keyword) {
+      params.set("keyword", keyword);
+    }
+
+    if (difficulty) {
+      params.set("difficulty", difficulty);
+    }
+
     const result = await apiFetch(`${CONFIG.ROUTES.QUESTIONS}?${params}`);
     const { data: questions, total, totalPages } = result;
     const currentUserId = getCurrentUserId();
-
     const solvedCount = questions.filter((q) => q[CONFIG.API_FIELDS.SOLVED]).length;
 
     let html = `
@@ -134,49 +275,9 @@ async function loadQuestions(keyword = "", page = 1) {
           <div class="score-label">Solved (this page)</div>
         </div>
       </div>
-      <div class="toolbar">
-        <button class="btn btn-primary" id="new-question-btn">+ New Question</button>
-        <div class="search-bar">
-          <input type="text" id="keyword-input" placeholder="Search by keyword..." value="${keyword}" />
-          <button class="btn btn-search" id="search-btn">Search</button>
-          ${keyword ? `<button class="btn btn-clear" id="clear-btn">Clear</button>` : ""}
-        </div>
-      </div>`;
-
-    if (questions.length === 0) {
-      html += '<p class="empty-state">No questions found. Create one to get started!</p>';
-    } else {
-      html += questions
-        .map(
-          (q) => `
-        <article class="question-card ${q[CONFIG.API_FIELDS.SOLVED] ? "solved-card" : ""}">
-          <h3>
-            <a href="#" class="question-link" data-id="${q.id}">${q.question}</a>
-            ${q[CONFIG.API_FIELDS.SOLVED] ? `<span class="badge-solved">Solved</span>` : ""}
-          </h3>
-          ${
-            q.keywords && q.keywords.length
-              ? `<div class="question-keywords">${q.keywords.map((k) => `<span class="keyword">${k}</span>`).join("")}</div>`
-              : ""
-          }
-          <div class="question-actions">
-            <span>
-              <button class="btn btn-play" data-id="${q.id}">Play</button>
-              <a href="#" class="read-more" data-id="${q.id}">Question details</a>
-            </span>
-            ${
-              q.userId === currentUserId
-                ? `<span class="owner-actions">
-                    <button class="btn btn-edit" data-id="${q.id}">Edit</button>
-                    <button class="btn btn-delete" data-id="${q.id}">Delete</button>
-                  </span>`
-                : ""
-            }
-          </div>
-        </article>`
-        )
-        .join("");
-    }
+      ${renderToolbar(keyword, difficulty)}
+      ${renderQuestionCards(questions, currentUserId)}
+    `;
 
     if (totalPages > 1) {
       html += `
@@ -188,50 +289,100 @@ async function loadQuestions(keyword = "", page = 1) {
     }
 
     container.innerHTML = html;
-
-    document.getElementById("new-question-btn").addEventListener("click", () => showQuestionForm());
-
-    document.getElementById("search-btn").addEventListener("click", () => {
-      loadQuestions(document.getElementById("keyword-input").value.trim(), 1);
-    });
-
-    document.getElementById("keyword-input").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") loadQuestions(e.target.value.trim(), 1);
-    });
-
-    const clearBtn = document.getElementById("clear-btn");
-    if (clearBtn) clearBtn.addEventListener("click", () => loadQuestions());
-
-    const prevBtn = document.getElementById("prev-btn");
-    if (prevBtn) prevBtn.addEventListener("click", () => loadQuestions(keyword, page - 1));
-
-    const nextBtn = document.getElementById("next-btn");
-    if (nextBtn) nextBtn.addEventListener("click", () => loadQuestions(keyword, page + 1));
-
-    container.querySelectorAll(".question-link, .read-more").forEach((el) => {
-      el.addEventListener("click", (e) => {
-        e.preventDefault();
-        loadQuestionDetail(el.dataset.id);
-      });
-    });
-
-    container.querySelectorAll(".btn-edit").forEach((el) => {
-      el.addEventListener("click", () => showQuestionForm(el.dataset.id));
-    });
-
-    container.querySelectorAll(".btn-delete").forEach((el) => {
-      el.addEventListener("click", () => deleteQuestion(el.dataset.id));
-    });
-
-    container.querySelectorAll(".btn-play").forEach((el) => {
-      el.addEventListener("click", () => playQuestion(el.dataset.id));
-    });
+    attachQuestionListEvents(keyword, page, difficulty);
   } catch (err) {
     if (err.message === "No token provided" || err.message === "Invalid or expired token") {
       removeToken();
       showAuth();
       return;
     }
+
+    container.innerHTML = `<p class="error">${err.message}</p>`;
+  }
+}
+
+async function loadRandomQuiz() {
+  const container = document.getElementById("questions-container");
+  container.innerHTML = '<p class="loading">Loading random quiz...</p>';
+
+  try {
+    const result = await apiFetch(`${CONFIG.ROUTES.QUESTIONS}/random`);
+    const questions = result.data;
+    const currentUserId = getCurrentUserId();
+
+    container.innerHTML = `
+      <a href="#" id="back-btn" class="back-link">&larr; Back to questions</a>
+      <h2 style="margin-bottom:1rem;color:#ffd200">Random Quiz</h2>
+      ${renderQuestionCards(questions, currentUserId)}
+    `;
+
+    document.getElementById("back-btn").addEventListener("click", (e) => {
+      e.preventDefault();
+      loadQuestions();
+    });
+
+    attachQuestionCardOnlyEvents();
+  } catch (err) {
+    container.innerHTML = `<p class="error">${err.message}</p>`;
+  }
+}
+
+function attachQuestionCardOnlyEvents() {
+  const container = document.getElementById("questions-container");
+
+  container.querySelectorAll(".question-link, .read-more").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      loadQuestionDetail(el.dataset.id);
+    });
+  });
+
+  container.querySelectorAll(".btn-edit").forEach((el) => {
+    el.addEventListener("click", () => showQuestionForm(el.dataset.id));
+  });
+
+  container.querySelectorAll(".btn-delete").forEach((el) => {
+    el.addEventListener("click", () => deleteQuestion(el.dataset.id));
+  });
+
+  container.querySelectorAll(".btn-play").forEach((el) => {
+    el.addEventListener("click", () => playQuestion(el.dataset.id));
+  });
+}
+
+async function loadLeaderboard() {
+  const container = document.getElementById("questions-container");
+  container.innerHTML = '<p class="loading">Loading leaderboard...</p>';
+
+  try {
+    const result = await apiFetch("/api/leaderboard");
+    const users = result.data;
+
+    container.innerHTML = `
+      <a href="#" id="back-btn" class="back-link">&larr; Back to questions</a>
+      <div class="question-form-wrapper">
+        <h2>Leaderboard</h2>
+        ${
+          users.length === 0
+            ? `<p class="empty-state">No leaderboard data yet.</p>`
+            : users
+                .map(
+                  (user, index) => `
+                    <article class="question-card">
+                      <h3>#${index + 1} ${user.name}</h3>
+                      <p class="question-answer">Correct attempts: <strong>${user.correctAttempts}</strong></p>
+                    </article>`
+                )
+                .join("")
+        }
+      </div>
+    `;
+
+    document.getElementById("back-btn").addEventListener("click", (e) => {
+      e.preventDefault();
+      loadQuestions();
+    });
+  } catch (err) {
     container.innerHTML = `<p class="error">${err.message}</p>`;
   }
 }
@@ -248,7 +399,11 @@ async function loadQuestionDetail(qId) {
     container.innerHTML = `
       <a href="#" id="back-btn" class="back-link">&larr; Back to questions</a>
       <article class="question-card question-detail">
-        <h3>${q.question} ${q[CONFIG.API_FIELDS.SOLVED] ? `<span class="badge-solved">Solved</span>` : ""}</h3>
+        <h3>
+          ${q.question}
+          ${q[CONFIG.API_FIELDS.SOLVED] ? `<span class="badge-solved">Solved</span>` : ""}
+          <span class="keyword">${q.difficulty || "easy"}</span>
+        </h3>
         <p class="question-meta">by ${q.userName || "Unknown"}</p>
         ${q.imageUrl ? `<img class="question-image" src="${q.imageUrl}" alt="">` : ""}
         <p class="question-meta">Use Play to submit your answer.</p>
@@ -284,7 +439,7 @@ async function loadQuestionDetail(qId) {
 async function showQuestionForm(qId) {
   const container = document.getElementById("questions-container");
   const isEdit = !!qId;
-  let q = { question: "", answer: "", keywords: [] };
+  let q = { question: "", answer: "", difficulty: "easy", keywords: [] };
 
   if (isEdit) {
     try {
@@ -309,6 +464,14 @@ async function showQuestionForm(qId) {
           <textarea id="q-answer" rows="4" required>${q.answer}</textarea>
         </div>
         <div class="form-group">
+          <label for="q-difficulty">Difficulty</label>
+          <select id="q-difficulty" style="width:100%;padding:0.7rem 1rem;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:10px;color:#fff;font-family:inherit">
+            <option value="easy" ${(q.difficulty || "easy") === "easy" ? "selected" : ""}>Easy</option>
+            <option value="medium" ${q.difficulty === "medium" ? "selected" : ""}>Medium</option>
+            <option value="hard" ${q.difficulty === "hard" ? "selected" : ""}>Hard</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label for="q-keywords">Keywords (comma-separated)</label>
           <input type="text" id="q-keywords" value="${q.keywords ? q.keywords.join(", ") : ""}" />
         </div>
@@ -329,22 +492,34 @@ async function showQuestionForm(qId) {
 
   document.getElementById("question-form").addEventListener("submit", async (e) => {
     e.preventDefault();
+
     const errorEl = document.getElementById("question-form-error");
     errorEl.textContent = "";
 
     const body = new FormData();
     body.append("question", document.getElementById("q-question").value);
     body.append("answer", document.getElementById("q-answer").value);
+    body.append("difficulty", document.getElementById("q-difficulty").value);
     body.append("keywords", document.getElementById("q-keywords").value);
+
     const imageFile = document.getElementById("q-image").files[0];
-    if (imageFile) body.append("image", imageFile);
+    if (imageFile) {
+      body.append("image", imageFile);
+    }
 
     try {
       if (isEdit) {
-        await apiFetch(`${CONFIG.ROUTES.QUESTIONS}/${qId}`, { method: "PUT", body });
+        await apiFetch(`${CONFIG.ROUTES.QUESTIONS}/${qId}`, {
+          method: "PUT",
+          body
+        });
       } else {
-        await apiFetch(CONFIG.ROUTES.QUESTIONS, { method: "POST", body });
+        await apiFetch(CONFIG.ROUTES.QUESTIONS, {
+          method: "POST",
+          body
+        });
       }
+
       loadQuestions();
     } catch (err) {
       errorEl.textContent = err.message;
@@ -363,6 +538,7 @@ async function playQuestion(qId) {
       <a href="#" id="back-btn" class="back-link">&larr; Back to questions</a>
       <div class="question-form-wrapper" style="text-align:center">
         <div class="play-question-text">${q.question}</div>
+        <p class="question-meta">Difficulty: ${q.difficulty || "easy"}</p>
         ${q.imageUrl ? `<img class="question-image" src="${q.imageUrl}" alt="" style="margin:0 auto 1rem">` : ""}
         ${
           q.keywords && q.keywords.length
@@ -389,6 +565,7 @@ async function playQuestion(qId) {
 
     document.getElementById("play-form").addEventListener("submit", async (e) => {
       e.preventDefault();
+
       const errorEl = document.getElementById("play-error");
       const resultEl = document.getElementById("play-result");
       errorEl.textContent = "";
@@ -399,7 +576,9 @@ async function playQuestion(qId) {
       try {
         const result = await apiFetch(`${CONFIG.ROUTES.QUESTIONS}/${qId}/play`, {
           method: "POST",
-          body: JSON.stringify({ submittedAnswer: answer }),
+          body: JSON.stringify({
+            submittedAnswer: answer
+          })
         });
 
         if (result.correct) {
@@ -420,10 +599,15 @@ async function playQuestion(qId) {
 }
 
 async function deleteQuestion(qId) {
-  if (!confirm("Are you sure you want to delete this question?")) return;
+  if (!confirm("Are you sure you want to delete this question?")) {
+    return;
+  }
 
   try {
-    await apiFetch(`${CONFIG.ROUTES.QUESTIONS}/${qId}`, { method: "DELETE" });
+    await apiFetch(`${CONFIG.ROUTES.QUESTIONS}/${qId}`, {
+      method: "DELETE"
+    });
+
     loadQuestions();
   } catch (err) {
     alert(err.message);
@@ -437,6 +621,7 @@ function handleLogout() {
 
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("logout-btn").addEventListener("click", handleLogout);
+
   if (getToken()) {
     showApp();
   } else {
